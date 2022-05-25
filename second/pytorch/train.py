@@ -183,7 +183,7 @@ def train(config_path,
     target_assigner = net.target_assigner
     voxel_generator = net.voxel_generator
     print("num parameters:", len(list(net.parameters())))
-    torchplus.train.try_restore_latest_checkpoints(model_dir, [net])
+    #torchplus.train.try_restore_latest_checkpoints(model_dir, [net])
     if pretrained_path is not None:
         model_dict = net.state_dict()
         pretrained_dict = torch.load(pretrained_path)
@@ -263,7 +263,7 @@ def train(config_path,
         dataset,
         batch_size=input_cfg.batch_size * num_gpu,
         shuffle=True,
-        num_workers=input_cfg.preprocess.num_workers * num_gpu,
+        num_workers=1,#input_cfg.preprocess.num_workers * num_gpu,
         pin_memory=False,
         collate_fn=collate_fn,
         worker_init_fn=_worker_init_fn,
@@ -272,7 +272,7 @@ def train(config_path,
         eval_dataset,
         batch_size=eval_input_cfg.batch_size, # only support multi-gpu train
         shuffle=False,
-        num_workers=eval_input_cfg.preprocess.num_workers,
+        num_workers=1,#eval_input_cfg.preprocess.num_workers,
         pin_memory=False,
         collate_fn=merge_second_batch)
 

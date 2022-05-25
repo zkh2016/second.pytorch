@@ -107,6 +107,8 @@ class SparseMiddleExtractor(nn.Module):
         ret = ret.view(N, C * D, H, W)
         return ret
 
+flag = 1
+
 @register_middle
 class SpMiddleFHD(nn.Module):
     def __init__(self,
@@ -138,56 +140,68 @@ class SpMiddleFHD(nn.Module):
                 nn.ConvTranspose2d)
         sparse_shape = np.array(output_shape[1:4]) + [1, 0, 0]
         # sparse_shape[0] = 11
-        print(sparse_shape)
+        print("sparse_shape = ", sparse_shape)
+        print("output_shape = ", output_shape)
         self.sparse_shape = sparse_shape
         self.voxel_output_shape = output_shape
         # input: # [1600, 1200, 41]
         self.middle_conv = spconv.SparseSequential(
             SubMConv3d(num_input_features, 16, 3, indice_key="subm0"),
-            BatchNorm1d(16),
+            #BatchNorm1d(16),
             nn.ReLU(),
+
             SubMConv3d(16, 16, 3, indice_key="subm0"),
-            BatchNorm1d(16),
+            #BatchNorm1d(16),
             nn.ReLU(),
+
             SpConv3d(16, 32, 3, 2,
                      padding=1),  # [1600, 1200, 41] -> [800, 600, 21]
-            BatchNorm1d(32),
+            #BatchNorm1d(32),
             nn.ReLU(),
+
             SubMConv3d(32, 32, 3, indice_key="subm1"),
-            BatchNorm1d(32),
+            #BatchNorm1d(32),
             nn.ReLU(),
+
             SubMConv3d(32, 32, 3, indice_key="subm1"),
-            BatchNorm1d(32),
+            #BatchNorm1d(32),
             nn.ReLU(),
             SpConv3d(32, 64, 3, 2,
                      padding=1),  # [800, 600, 21] -> [400, 300, 11]
-            BatchNorm1d(64),
+            #BatchNorm1d(64),
+            nn.ReLU(),
+
+            SubMConv3d(64, 64, 3, indice_key="subm2"),
+            #BatchNorm1d(64),
+            nn.ReLU(),
+
+            SubMConv3d(64, 64, 3, indice_key="subm2"),
+            #BatchNorm1d(64),
             nn.ReLU(),
             SubMConv3d(64, 64, 3, indice_key="subm2"),
-            BatchNorm1d(64),
+            #BatchNorm1d(64),
             nn.ReLU(),
-            SubMConv3d(64, 64, 3, indice_key="subm2"),
-            BatchNorm1d(64),
-            nn.ReLU(),
-            SubMConv3d(64, 64, 3, indice_key="subm2"),
-            BatchNorm1d(64),
-            nn.ReLU(),
+
             SpConv3d(64, 64, 3, 2,
                      padding=[0, 1, 1]),  # [400, 300, 11] -> [200, 150, 5]
-            BatchNorm1d(64),
+            #BatchNorm1d(64),
             nn.ReLU(),
+
             SubMConv3d(64, 64, 3, indice_key="subm3"),
-            BatchNorm1d(64),
+            #BatchNorm1d(64),
             nn.ReLU(),
+
             SubMConv3d(64, 64, 3, indice_key="subm3"),
-            BatchNorm1d(64),
+            #BatchNorm1d(64),
             nn.ReLU(),
+
             SubMConv3d(64, 64, 3, indice_key="subm3"),
-            BatchNorm1d(64),
+            #BatchNorm1d(64),
             nn.ReLU(),
+
             SpConv3d(64, 64, (3, 1, 1),
                      (2, 1, 1)),  # [200, 150, 5] -> [200, 150, 2]
-            BatchNorm1d(64),
+            #BatchNorm1d(64),
             nn.ReLU(),
         )
         self.max_batch_size = 6
@@ -196,16 +210,28 @@ class SpMiddleFHD(nn.Module):
     def forward(self, voxel_features, coors, batch_size):
         # coors[:, 1] += 1
         coors = coors.int()
+        global flag
+        if flag == 0:
+            np.save("in_features", voxel_features.detach().cpu().numpy())
+            np.save("in_coors", coors.cpu().numpy())
+            for i in range(int(len(self.middle_conv)/2)):
+                np.save("in_weight" + str(i), self.middle_conv[i*2].weight.data.detach().cpu().numpy())
         ret = spconv.SparseConvTensor(voxel_features, coors, self.sparse_shape,
                                       batch_size)
         # t = time.time()
         # torch.cuda.synchronize()
         ret = self.middle_conv(ret)
+        if flag == 0:
+            np.save("out_features", ret.features.detach().cpu().numpy())
+            np.save("out_coors", ret.indices.cpu().numpy())
+            print("end save....")
+            flag = 1
         # torch.cuda.synchronize()
         # print("spconv forward time", time.time() - t)
         ret = ret.dense()
 
         N, C, D, H, W = ret.shape
+        print("out shape: ", N, C, D, H, W)
         ret = ret.view(N, C * D, H, W)
         return ret
 

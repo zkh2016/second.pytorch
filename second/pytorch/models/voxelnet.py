@@ -54,6 +54,8 @@ class LossNormType(Enum):
     NormByNumPosNeg = "norm_by_num_pos_neg"
     DontNorm = "dont_norm"
 
+flag = 1
+
 @register_voxelnet
 class VoxelNet(nn.Module):
     def __init__(self,
@@ -106,6 +108,15 @@ class VoxelNet(nn.Module):
                  direction_limit_offset=0,
                  name='voxelnet'):
         super().__init__()
+        print("voxel_net:")
+        print("output_shape = ", output_shape)
+        print("num_class = ", num_class)
+        print("num_input_features = ", num_input_features)
+        print("vfe_class_name = ", vfe_class_name)
+        print("middle_class_name = ", middle_class_name)
+        print("rpn_class_name = ", rpn_class_name)
+        print("end init voxelnet")
+
         self.name = name
         self._sin_error_factor = sin_error_factor
         self._num_class = num_class
@@ -323,22 +334,66 @@ class VoxelNet(nn.Module):
             }
         """
         self.start_timer("voxel_feature_extractor")
+        global flag
+        if flag == 0:
+            np.save('torch_vfe_in_voxels', voxels.detach().cpu().numpy())
+            np.save('torch_vfe_in_coors', coors.cpu().numpy())
+            np.save('torch_vfe_in_num_points', num_points.cpu().numpy())
+        t0 = time.time() 
         voxel_features = self.voxel_feature_extractor(voxels, num_points,
                                                       coors)
+        torch.cuda.synchronize()
+        t1 = time.time()
+        print("vfe time: ", t1-t0)
+        if flag == 0:
+            np.save('torch_vfe_out_voxels', voxel_features.detach().cpu().numpy())
         self.end_timer("voxel_feature_extractor")
 
         self.start_timer("middle forward")
+        t0 = time.time() 
         spatial_features = self.middle_feature_extractor(
             voxel_features, coors, batch_size)
+        torch.cuda.synchronize()
+        t1 = time.time()
+        print("middle time: ", t1-t0)
+
+        if flag == 0:
+            np.save('torch_spatial_features', spatial_features.detach().cpu().numpy())
+
         self.end_timer("middle forward")
         self.start_timer("rpn forward")
+        t0 = time.time() 
         preds_dict = self.rpn(spatial_features)
+        torch.cuda.synchronize()
+        t1 = time.time()
+        print("rpn time: ", t1-t0)
+        if flag == 0:
+            np.save('torch_box_preds', preds_dict['box_preds'].detach().cpu().numpy())
+            np.save('torch_cls_preds', preds_dict['cls_preds'].detach().cpu().numpy())
+            if self._use_direction_classifier:
+                np.save('torch_dir_cls_preds', preds_dict['dir_cls_preds'].detach().cpu().numpy())
+            flag = 1
         self.end_timer("rpn forward")
         return preds_dict
 
     def forward(self, example):
         """module's forward should always accept dict and return loss.
         """
+
+        def print_voxel(data, name):
+            print(name)
+            print("voxels.shape=", data.size(), "dtype=", data.dtype)
+
+        #print(example)
+        print("voxelnet forward: ")
+        print_voxel(example['voxels'], 'voxel')
+        print_voxel(example['num_points'], 'num_points')
+        print_voxel(example['anchors'], 'anchors')
+        print_voxel(example['labels'], 'labels')
+        print_voxel(example['reg_targets'], 'reg_targets')
+        print_voxel(example['importance'], 'importance')
+        print("end voxelnet forward")
+
         voxels = example["voxels"]
         num_points = example["num_points"]
         coors = example["coordinates"]
@@ -737,6 +792,7 @@ def create_loss(loc_loss_ftor,
     cls_targets = cls_targets.squeeze(-1)
     one_hot_targets = torchplus.nn.one_hot(
         cls_targets, depth=num_class + 1, dtype=box_preds.dtype)
+    print("one_hot_targets.shape=", one_hot_targets.shape)
     if encode_background_as_zeros:
         one_hot_targets = one_hot_targets[..., 1:]
     if encode_rad_error_by_sin:
