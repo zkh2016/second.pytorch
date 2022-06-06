@@ -199,7 +199,8 @@ class RPN(nn.Module):
 
         return ret_dict
 
-flag = 1
+flag = 0
+input_count = 0
 class RPNNoHeadBase(nn.Module):
     def __init__(self,
                  use_norm=True,
@@ -229,7 +230,6 @@ class RPNNoHeadBase(nn.Module):
         self._num_upsample_filters = num_upsample_filters
         self._num_input_features = num_input_features
         self._use_norm = use_norm
-        self._use_norm = False
         self._use_groupnorm = use_groupnorm
         self._num_groups = num_groups
         assert len(layer_strides) == len(layer_nums)
@@ -244,13 +244,13 @@ class RPNNoHeadBase(nn.Module):
             assert val == must_equal_list[0]
 
         if self._use_norm:
-            #if use_groupnorm:
-            #    BatchNorm2d = change_default_args(
-            #        num_groups=num_groups, eps=1e-3)(GroupNorm)
-            #else:
-            #    BatchNorm2d = change_default_args(
-            #        eps=1e-3, momentum=0.01)(nn.BatchNorm2d)
-            BatchNorm2d = Empty
+            if use_groupnorm:
+                BatchNorm2d = change_default_args(
+                    num_groups=num_groups, eps=1e-3)(GroupNorm)
+            else:
+                BatchNorm2d = change_default_args(
+                    eps=1e-3, momentum=0.01)(nn.BatchNorm2d)
+            #BatchNorm2d = Empty
             Conv2d = change_default_args(bias=False)(nn.Conv2d)
             ConvTranspose2d = change_default_args(bias=False)(
                 nn.ConvTranspose2d)
@@ -276,27 +276,27 @@ class RPNNoHeadBase(nn.Module):
                 if stride >= 1:
                     stride = np.round(stride).astype(np.int64)
                     deblock = nn.Sequential(
-                        ConvTranspose2d(
+                        nn.ConvTranspose2d(
                             num_out_filters,
                             num_upsample_filters[i - self._upsample_start_idx],
                             stride,
-                            stride=stride),
-                        BatchNorm2d(
+                            stride=stride, bias=False),
+                        nn.BatchNorm2d(
                             num_upsample_filters[i -
-                                                 self._upsample_start_idx]),
+                                                 self._upsample_start_idx], eps=1e-3, momentum=0.01),
                         nn.ReLU(),
                     )
                 else:
                     stride = np.round(1 / stride).astype(np.int64)
                     deblock = nn.Sequential(
-                        Conv2d(
+                        nn.Conv2d(
                             num_out_filters,
                             num_upsample_filters[i - self._upsample_start_idx],
                             stride,
-                            stride=stride),
-                        BatchNorm2d(
+                            stride=stride, bias=False),
+                        nn.BatchNorm2d(
                             num_upsample_filters[i -
-                                                 self._upsample_start_idx]),
+                                                 self._upsample_start_idx], eps=1e-3, momentum=0.01),
                         nn.ReLU(),
                     )
                 deblocks.append(deblock)
@@ -319,16 +319,12 @@ class RPNNoHeadBase(nn.Module):
         stage_outputs = []
         for i in range(len(self.blocks)):
             x = self.blocks[i](x)
+            if flag == 0:
+                np.save("torch_block"+str(i)+"_res", x.detach().cpu().numpy())
             stage_outputs.append(x)
             if i - self._upsample_start_idx >= 0:
                 ups.append(self.deblocks[i - self._upsample_start_idx](x))
 
-        for i in range(len(ups)):
-            if flag == 0:
-                np.save('torch_up'+str(i), ups[i].detach().cpu().numpy())
-        for i in range(len(stage_outputs)):
-            if flag == 0:
-                np.save('torch_stage'+str(i), stage_outputs[i].detach().cpu().numpy())
 
         if len(ups) > 0:
             x = torch.cat(ups, dim=1)
@@ -400,23 +396,60 @@ class RPNBase(RPNNoHeadBase):
             self.conv_dir_cls = nn.Conv2d(
                 final_num_filters, num_anchor_per_loc * num_direction_bins, 1)
 
+        #for debug
+        for i in range(len(self.blocks)):
+            np.save("torch_blocks" + str(i)+str(0) + "_weight", self.blocks[i][1].weight.data.detach().cpu().numpy())
+            np.save("torch_blocks" + str(i)+str(1) + "_weight", self.blocks[i][2].weight.data.detach().cpu().numpy())
+            np.save("torch_blocks" + str(i)+str(1) + "_bias", self.blocks[i][2].bias.data.detach().cpu().numpy())
+            for j in range(int((len(self.blocks[i])-4)/3)):
+                np.save("torch_blocks" + str(i)+str(2 + 2*j+0) + "_weight", self.blocks[i][4 + j*3].weight.data.detach().cpu().numpy())
+                np.save("torch_blocks" + str(i)+str(2 + 2*j+1) + "_weight", self.blocks[i][4 + j*3+1].weight.data.detach().cpu().numpy())
+                np.save("torch_blocks" + str(i)+str(2 + 2*j+1) + "_bias", self.blocks[i][4 + j*3+1].bias.data.detach().cpu().numpy())
+        for i in range(len(self.deblocks)):
+            for j in range(int(len(self.deblocks[i])/3)):
+                np.save("torch_deblocks" + str(i)+str(2*j)+"_weight", self.deblocks[i][j*3].weight.data.detach().cpu().numpy())
+                np.save("torch_deblocks" + str(i)+str(2*j+1)+"_weight", self.deblocks[i][j*3+1].weight.data.detach().cpu().numpy())
+                np.save("torch_deblocks" + str(i)+str(2*j+1)+"_bias", self.deblocks[i][j*3+1].bias.data.detach().cpu().numpy())
+        np.save("torch_conv_box_weight", self.conv_box.weight.data.detach().cpu().numpy())
+        np.save("torch_conv_box_bias", self.conv_box.bias.data.detach().cpu().numpy())
+        np.save("torch_conv_cls_weight", self.conv_cls.weight.data.detach().cpu().numpy())
+        np.save("torch_conv_cls_bias", self.conv_cls.bias.data.detach().cpu().numpy())
+        if self._use_direction_classifier:
+            np.save("torch_conv_dir_cls_weight", self.conv_dir_cls.weight.data.detach().cpu().numpy())
+            np.save("torch_conv_dir_cls_bias", self.conv_dir_cls.bias.data.detach().cpu().numpy())
+
     def forward(self, x):
         global flag 
-        if flag == 0:
-            for i in range(len(self.blocks)):
-                np.save("torch_blocks" + str(i)+str(0) + "_weight", self.blocks[i][1].weight.data.detach().cpu().numpy())
-                for j in range(int((len(self.blocks[i])-3)/2)):
-                    np.save("torch_blocks" + str(i)+str(j+1) + "_weight", self.blocks[i][3 + j*2].weight.data.detach().cpu().numpy())
-            for i in range(len(self.deblocks)):
-                for j in range(int(len(self.deblocks[i])/2)):
-                    np.save("torch_deblocks" + str(i)+str(j)+"_weight", self.deblocks[i][j*2].weight.data.detach().cpu().numpy())
+        global input_count 
+
+        #for debug
+        base_dir = './rpn/' + str(input_count) + '_'
+        for i in range(len(self.blocks)):
+            np.save(base_dir + "torch_blocks" + str(i)+str(0) + "_weight", self.blocks[i][1].weight.data.detach().cpu().numpy())
+            np.save(base_dir + "torch_blocks" + str(i)+str(1) + "_weight", self.blocks[i][2].weight.data.detach().cpu().numpy())
+            np.save(base_dir + "torch_blocks" + str(i)+str(1) + "_bias", self.blocks[i][2].bias.data.detach().cpu().numpy())
+            for j in range(int((len(self.blocks[i])-4)/3)):
+                np.save(base_dir + "torch_blocks" + str(i)+str(2 + 2*j+0) + "_weight", self.blocks[i][4 + j*3].weight.data.detach().cpu().numpy())
+                np.save(base_dir + "torch_blocks" + str(i)+str(2 + 2*j+1) + "_weight", self.blocks[i][4 + j*3+1].weight.data.detach().cpu().numpy())
+                np.save(base_dir + "torch_blocks" + str(i)+str(2 + 2*j+1) + "_bias", self.blocks[i][4 + j*3+1].bias.data.detach().cpu().numpy())
+        for i in range(len(self.deblocks)):
+            for j in range(int(len(self.deblocks[i])/3)):
+                np.save(base_dir + "torch_deblocks" + str(i)+str(2*j)+"_weight", self.deblocks[i][j*3].weight.data.detach().cpu().numpy())
+                np.save(base_dir + "torch_deblocks" + str(i)+str(2*j+1)+"_weight", self.deblocks[i][j*3+1].weight.data.detach().cpu().numpy())
+                np.save(base_dir + "torch_deblocks" + str(i)+str(2*j+1)+"_bias", self.deblocks[i][j*3+1].bias.data.detach().cpu().numpy())
+        np.save(base_dir + "torch_conv_box_weight", self.conv_box.weight.data.detach().cpu().numpy())
+        np.save(base_dir + "torch_conv_box_bias", self.conv_box.bias.data.detach().cpu().numpy())
+        np.save(base_dir + "torch_conv_cls_weight", self.conv_cls.weight.data.detach().cpu().numpy())
+        np.save(base_dir + "torch_conv_cls_bias", self.conv_cls.bias.data.detach().cpu().numpy())
+        if self._use_direction_classifier:
+            np.save(base_dir + "torch_conv_dir_cls_weight", self.conv_dir_cls.weight.data.detach().cpu().numpy())
+            np.save(base_dir + "torch_conv_dir_cls_bias", self.conv_dir_cls.bias.data.detach().cpu().numpy())
+
                     
         res = super().forward(x)
 
-        if flag == 0:
-            np.save("torch_rpn_out", res['out'].detach().cpu().numpy())
-            print("save rpn_out..")
-            flag = 1
+        np.save('./rpn/' + str(input_count) + "_out", res['out'].detach().cpu().numpy())
+        input_count += 1
 
         x = res["out"]
         box_preds = self.conv_box(x)
@@ -436,6 +469,10 @@ class RPNBase(RPNNoHeadBase):
             "box_preds": box_preds,
             "cls_preds": cls_preds,
         }
+        if flag == 0:
+            np.save("torch_box_preds", box_preds.detach().cpu().numpy())
+            np.save("torch_cls_preds", cls_preds.detach().cpu().numpy())
+            flag = 1
         if self._use_direction_classifier:
             dir_cls_preds = self.conv_dir_cls(x)
             dir_cls_preds = dir_cls_preds.view(
@@ -494,13 +531,13 @@ class ResNetRPN(RPNBase):
 class RPNV2(RPNBase):
     def _make_layer(self, inplanes, planes, num_blocks, stride=1):
         if self._use_norm:
-            #if self._use_groupnorm:
-            #    BatchNorm2d = change_default_args(
-            #        num_groups=self._num_groups, eps=1e-3)(GroupNorm)
-            #else:
-            #    BatchNorm2d = change_default_args(
-            #        eps=1e-3, momentum=0.01)(nn.BatchNorm2d)
-            BatchNorm2d = Empty
+            if self._use_groupnorm:
+                BatchNorm2d = change_default_args(
+                    num_groups=self._num_groups, eps=1e-3)(GroupNorm)
+            else:
+                BatchNorm2d = change_default_args(
+                    eps=1e-3, momentum=0.01)(nn.BatchNorm2d)
+            #BatchNorm2d = Empty
             Conv2d = change_default_args(bias=False)(nn.Conv2d)
             ConvTranspose2d = change_default_args(bias=False)(
                 nn.ConvTranspose2d)
@@ -512,13 +549,13 @@ class RPNV2(RPNBase):
 
         block = Sequential(
             nn.ZeroPad2d(1),
-            Conv2d(inplanes, planes, 3, stride=stride),
-            #BatchNorm2d(planes),
+            nn.Conv2d(inplanes, planes, 3, stride=stride, bias=False),
+            nn.BatchNorm2d(planes, eps=1e-3, momentum=0.01),
             nn.ReLU(),
         )
         for j in range(num_blocks):
-            block.add(Conv2d(planes, planes, 3, padding=1))
-            #block.add(BatchNorm2d(planes))
+            block.add(nn.Conv2d(planes, planes, 3, padding=1, bias=False))
+            block.add(nn.BatchNorm2d(planes, eps=1e-3, momentum=0.01))
             block.add(nn.ReLU())
 
         return block, planes

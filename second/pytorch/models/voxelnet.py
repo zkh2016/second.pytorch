@@ -17,6 +17,9 @@ from torchplus import metrics
 from second.pytorch.utils import torch_timer
 
 
+loss_flag = 0
+input_count = 0
+
 def _get_pos_neg_loss(cls_loss, labels):
     # cls_loss: [N, num_anchors, num_class]
     # labels: [N, num_anchors]
@@ -54,7 +57,7 @@ class LossNormType(Enum):
     NormByNumPosNeg = "norm_by_num_pos_neg"
     DontNorm = "dont_norm"
 
-flag = 1
+flag = 0
 
 @register_voxelnet
 class VoxelNet(nn.Module):
@@ -158,12 +161,27 @@ class VoxelNet(nn.Module):
             voxel_size=self.voxel_generator.voxel_size,
             pc_range=self.voxel_generator.point_cloud_range,
         )
+        print("vfe:")
+        print(self.voxel_feature_extractor)
+        i = 0
+        for p in self.voxel_feature_extractor.parameters():
+            i += 1
+        print(i)
+#print(len(self.voxel_feature_extractor.parameters()))
         self.middle_feature_extractor = middle.get_middle_class(middle_class_name)(
             output_shape,
             use_norm,
             num_input_features=middle_num_input_features,
             num_filters_down1=middle_num_filters_d1,
             num_filters_down2=middle_num_filters_d2)
+        print("middle:")
+        print(self.middle_feature_extractor)
+        i = 0
+        for p in self.middle_feature_extractor.parameters():
+            np.save('./parameters/torch_middle_param_' + str(i), p.data.detach().cpu().numpy())
+            i += 1
+        print(i)
+        #print(len(self.middle_feature_extractor.parameters()))
         self.rpn = rpn.get_rpn_class(rpn_class_name)(
             use_norm=True,
             num_class=num_class,
@@ -180,6 +198,14 @@ class VoxelNet(nn.Module):
             num_groups=num_groups,
             box_code_size=target_assigner.box_coder.code_size,
             num_direction_bins=self._num_direction_bins)
+        print("rpn:")
+        print(self.rpn)
+        i = 0
+        for p in self.rpn.parameters():
+            np.save('./parameters/torch_rpn_param_' + str(i), p.data.detach().cpu().numpy())
+            i+=1
+        print(i)
+        #print(len(self.rpn.parameters()))
         self.rpn_acc = metrics.Accuracy(
             dim=-1, encode_background_as_zeros=encode_background_as_zeros)
         self.rpn_precision = metrics.Precision(dim=-1)
@@ -262,6 +288,15 @@ class VoxelNet(nn.Module):
             neg_cls_weight=self._neg_cls_weight,
             loss_norm_type=self._loss_norm_type,
             dtype=box_preds.dtype)
+       
+        global loss_flag
+        if loss_flag == 0:
+            np.save("torch_labels", labels.cpu().numpy())
+            np.save("torch_reg_targets", reg_targets.cpu().numpy())
+            np.save("torch_importance", importance.cpu().numpy())
+            np.save("torch_cls_weights", cls_weights.cpu().numpy())
+            np.save("torch_reg_weights", reg_weights.cpu().numpy())
+            np.save("torch_cared_weights", cared.cpu().numpy())
 
         cls_targets = labels * cared.type_as(labels)
         cls_targets = cls_targets.unsqueeze(-1)
@@ -334,19 +369,25 @@ class VoxelNet(nn.Module):
             }
         """
         self.start_timer("voxel_feature_extractor")
+        print("voxels.stop_gradient=", voxels.requires_grad)
         global flag
+        global input_count
         if flag == 0:
             np.save('torch_vfe_in_voxels', voxels.detach().cpu().numpy())
             np.save('torch_vfe_in_coors', coors.cpu().numpy())
             np.save('torch_vfe_in_num_points', num_points.cpu().numpy())
+
+        np.save('./voxel/' + str(input_count) + '_voxels', voxels.detach().cpu().numpy())
         t0 = time.time() 
         voxel_features = self.voxel_feature_extractor(voxels, num_points,
                                                       coors)
         torch.cuda.synchronize()
         t1 = time.time()
+        print("voxel_features.stop_gradient=", voxel_features.requires_grad)
         print("vfe time: ", t1-t0)
         if flag == 0:
             np.save('torch_vfe_out_voxels', voxel_features.detach().cpu().numpy())
+        np.save('./vfe/' + str(input_count) + '_voxel_features', voxel_features.detach().cpu().numpy())
         self.end_timer("voxel_feature_extractor")
 
         self.start_timer("middle forward")
@@ -354,6 +395,7 @@ class VoxelNet(nn.Module):
         spatial_features = self.middle_feature_extractor(
             voxel_features, coors, batch_size)
         torch.cuda.synchronize()
+        np.save('./middle/' + str(input_count) + '_spatial_features', spatial_features.detach().cpu().numpy())
         t1 = time.time()
         print("middle time: ", t1-t0)
 
@@ -367,12 +409,18 @@ class VoxelNet(nn.Module):
         torch.cuda.synchronize()
         t1 = time.time()
         print("rpn time: ", t1-t0)
+
+        np.save('./rpn/' + str(input_count) + '_box_preds', preds_dict['box_preds'].detach().cpu().numpy())
+        np.save('./rpn/' + str(input_count) + '_cls_preds', preds_dict['cls_preds'].detach().cpu().numpy())
+        input_count += 1
+
         if flag == 0:
             np.save('torch_box_preds', preds_dict['box_preds'].detach().cpu().numpy())
             np.save('torch_cls_preds', preds_dict['cls_preds'].detach().cpu().numpy())
             if self._use_direction_classifier:
                 np.save('torch_dir_cls_preds', preds_dict['dir_cls_preds'].detach().cpu().numpy())
             flag = 1
+
         self.end_timer("rpn forward")
         return preds_dict
 
@@ -421,7 +469,20 @@ class VoxelNet(nn.Module):
         err_msg = f"num_anchors={batch_anchors.shape[1]}, but num_output={box_preds.shape[1]}. please check size"
         assert batch_anchors.shape[1] == box_preds.shape[1], err_msg
         if self.training:
-            return self.loss(example, preds_dict)
+            #return self.loss(example, preds_dict)
+            tmp_loss = self.loss(example, preds_dict)
+            global loss_flag
+            if loss_flag==0:
+                np.save('torch_loss', tmp_loss['loss'].detach().cpu().numpy())
+                np.save('torch_cls_loss', tmp_loss['cls_loss'].detach().cpu().numpy())
+                np.save('torch_loc_loss', tmp_loss['loc_loss'].detach().cpu().numpy())
+                np.save('torch_cls_pos_loss', tmp_loss['cls_pos_loss'].detach().cpu().numpy())
+                np.save('torch_cls_neg_loss', tmp_loss['cls_neg_loss'].detach().cpu().numpy())
+                np.save('torch_cls_loss_reduced', tmp_loss['cls_loss_reduced'].detach().cpu().numpy())
+                np.save('torch_loc_loss_reduced', tmp_loss['loc_loss_reduced'].detach().cpu().numpy())
+                np.save('torch_cared', tmp_loss['cared'].detach().cpu().numpy())
+                loss_flag=1
+            return tmp_loss
         else:
             self.start_timer("predict")
             with torch.no_grad():
@@ -793,6 +854,9 @@ def create_loss(loc_loss_ftor,
     one_hot_targets = torchplus.nn.one_hot(
         cls_targets, depth=num_class + 1, dtype=box_preds.dtype)
     print("one_hot_targets.shape=", one_hot_targets.shape)
+    global loss_flag
+    if loss_flag == 0:
+        np.save("torch_one_hot_targets", one_hot_targets.cpu().numpy())
     if encode_background_as_zeros:
         one_hot_targets = one_hot_targets[..., 1:]
     if encode_rad_error_by_sin:

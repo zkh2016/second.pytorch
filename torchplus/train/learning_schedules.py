@@ -40,9 +40,12 @@ class _LRSchedulerStep(object):
         if step is None:
             step = self.last_step + 1
         self.last_step = step
+        lr_str = ''
         for param_group, lr in zip(self.optimizer.param_groups, self.get_lr()):
             param_group['lr'] = lr
+            lr_str += str(lr) + ' '
 
+        print(lr_str)
 
 class Constant(_LRSchedulerStep):
     def __init__(self, optimizer, last_step=-1):

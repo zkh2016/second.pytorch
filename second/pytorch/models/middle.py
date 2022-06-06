@@ -145,6 +145,7 @@ class SpMiddleFHD(nn.Module):
         self.sparse_shape = sparse_shape
         self.voxel_output_shape = output_shape
         # input: # [1600, 1200, 41]
+        print("num_input_features=", num_input_features)
         self.middle_conv = spconv.SparseSequential(
             SubMConv3d(num_input_features, 16, 3, indice_key="subm0"),
             #BatchNorm1d(16),
@@ -206,6 +207,10 @@ class SpMiddleFHD(nn.Module):
         )
         self.max_batch_size = 6
         # self.grid = torch.full([self.max_batch_size, *sparse_shape], -1, dtype=torch.int32).cuda()
+        
+        #for debug
+        for i in range(int(len(self.middle_conv)/2)):
+            np.save("torch_middle_weight" + str(i), self.middle_conv[i*2].weight.data.detach().cpu().numpy())
 
     def forward(self, voxel_features, coors, batch_size):
         # coors[:, 1] += 1
@@ -214,8 +219,6 @@ class SpMiddleFHD(nn.Module):
         if flag == 0:
             np.save("in_features", voxel_features.detach().cpu().numpy())
             np.save("in_coors", coors.cpu().numpy())
-            for i in range(int(len(self.middle_conv)/2)):
-                np.save("in_weight" + str(i), self.middle_conv[i*2].weight.data.detach().cpu().numpy())
         ret = spconv.SparseConvTensor(voxel_features, coors, self.sparse_shape,
                                       batch_size)
         # t = time.time()

@@ -1,6 +1,7 @@
 from collections import Iterable, defaultdict
 from copy import deepcopy
 from itertools import chain
+import numpy as np
 
 import torch
 from torch import nn
@@ -9,6 +10,8 @@ from torch.autograd import Variable
 from torch.nn.utils import parameters_to_vector
 
 bn_types = (nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d)
+
+param_count = 0
 
 
 def split_bn_bias(layer_groups):
@@ -100,6 +103,11 @@ def listify(p=None, q=None):
 def trainable_params(m: nn.Module):
     "Return list of trainable params in `m`."
     res = filter(lambda p: p.requires_grad, m.parameters())
+    len = 0
+    for p in m.parameters():
+        if p.requires_grad:
+            len += 1
+    print("the len of params need grad: ", len)
     return res
 
 
@@ -118,6 +126,9 @@ class OptimWrapper(torch.optim.Optimizer):
         self.opt_keys.remove('params')
         self.read_defaults()
         self.wd = wd
+        print("opt=", self.opt)
+        print("opt_keys=", self.opt_keys)
+        print("wd=", self.wd, "true_wd=", self.true_wd, "bn_wd=", self.bn_wd)
 
     @classmethod
     def create(cls, opt_func, lr, layer_groups, **kwargs):
@@ -129,6 +140,7 @@ class OptimWrapper(torch.optim.Optimizer):
         } for l in split_groups])
         opt = cls(opt, **kwargs)
         opt.lr, opt.opt_func = listify(lr, layer_groups), opt_func
+        print("opt.lr=", opt.lr, "opt.opt_func=", opt.opt_func)
         return opt
 
     def new(self, layer_groups):
@@ -154,17 +166,34 @@ class OptimWrapper(torch.optim.Optimizer):
     def step(self) -> None:
         "Set weight decay and step optimizer."
         # weight decay outside of optimizer step (AdamW)
+        global param_count 
         if self.true_wd:
             for lr, wd, pg1, pg2 in zip(self._lr, self._wd,
                                         self.opt.param_groups[::2],
                                         self.opt.param_groups[1::2]):
+                print("opt step: wd = ", wd, " lr = ", lr, self._wd)
                 for p in pg1['params']:
+                    np.save('./weights/before_opt_' + str(param_count), p.data.cpu().numpy())
                     p.data.mul_(1 - wd * lr)
+                    np.save('./weights/after_opt_' + str(param_count), p.data.cpu().numpy())
+                    param_count += 1
                 if self.bn_wd:
                     for p in pg2['params']:
+                        np.save('./weights/before_opt_' + str(param_count), p.data.cpu().numpy())
                         p.data.mul_(1 - wd * lr)
+                        np.save('./weights/after_opt_' + str(param_count), p.data.cpu().numpy())
+                        param_count += 1
             self.set_val('weight_decay', listify(0, self._wd))
         self.opt.step()
+
+        for pg1, pg2 in zip(self.opt.param_groups[::2], self.opt.param_groups[1::2]):
+            for p in pg1['params']:
+                np.save('./weights/after_opt2_' + str(param_count), p.data.cpu().numpy())
+                param_count += 1
+            if self.bn_wd:
+                for p in pg2['params']:
+                    np.save('./weights/after_opt2_' + str(param_count), p.data.cpu().numpy())
+                    param_count += 1
 
     def zero_grad(self) -> None:
         "Clear optimizer gradients."
@@ -212,6 +241,7 @@ class OptimWrapper(torch.optim.Optimizer):
 
     @lr.setter
     def lr(self, val: float) -> None:
+        print("call set_lr..", val)
         self._lr = self.set_val('lr', listify(val, self._lr))
 
     @property
@@ -263,6 +293,8 @@ class OptimWrapper(torch.optim.Optimizer):
             self._mom, self._beta = self.read_val('betas')
         if 'weight_decay' in self.opt_keys:
             self._wd = self.read_val('weight_decay')
+        print("read_defaults:")
+        print("lr=", self._lr, "mom=", self._mom, "beta=", self._beta, "wd=", self._wd)
 
     def set_val(self, key: str, val, bn_groups: bool = True):
         "Set `val` inside the optimizer dictionary at `key`."
