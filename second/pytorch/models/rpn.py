@@ -199,8 +199,10 @@ class RPN(nn.Module):
 
         return ret_dict
 
-flag = 0
+flag = 1
 input_count = 0
+debug = 0
+
 class RPNNoHeadBase(nn.Module):
     def __init__(self,
                  use_norm=True,
@@ -397,59 +399,62 @@ class RPNBase(RPNNoHeadBase):
                 final_num_filters, num_anchor_per_loc * num_direction_bins, 1)
 
         #for debug
-        for i in range(len(self.blocks)):
-            np.save("torch_blocks" + str(i)+str(0) + "_weight", self.blocks[i][1].weight.data.detach().cpu().numpy())
-            np.save("torch_blocks" + str(i)+str(1) + "_weight", self.blocks[i][2].weight.data.detach().cpu().numpy())
-            np.save("torch_blocks" + str(i)+str(1) + "_bias", self.blocks[i][2].bias.data.detach().cpu().numpy())
-            for j in range(int((len(self.blocks[i])-4)/3)):
-                np.save("torch_blocks" + str(i)+str(2 + 2*j+0) + "_weight", self.blocks[i][4 + j*3].weight.data.detach().cpu().numpy())
-                np.save("torch_blocks" + str(i)+str(2 + 2*j+1) + "_weight", self.blocks[i][4 + j*3+1].weight.data.detach().cpu().numpy())
-                np.save("torch_blocks" + str(i)+str(2 + 2*j+1) + "_bias", self.blocks[i][4 + j*3+1].bias.data.detach().cpu().numpy())
-        for i in range(len(self.deblocks)):
-            for j in range(int(len(self.deblocks[i])/3)):
-                np.save("torch_deblocks" + str(i)+str(2*j)+"_weight", self.deblocks[i][j*3].weight.data.detach().cpu().numpy())
-                np.save("torch_deblocks" + str(i)+str(2*j+1)+"_weight", self.deblocks[i][j*3+1].weight.data.detach().cpu().numpy())
-                np.save("torch_deblocks" + str(i)+str(2*j+1)+"_bias", self.deblocks[i][j*3+1].bias.data.detach().cpu().numpy())
-        np.save("torch_conv_box_weight", self.conv_box.weight.data.detach().cpu().numpy())
-        np.save("torch_conv_box_bias", self.conv_box.bias.data.detach().cpu().numpy())
-        np.save("torch_conv_cls_weight", self.conv_cls.weight.data.detach().cpu().numpy())
-        np.save("torch_conv_cls_bias", self.conv_cls.bias.data.detach().cpu().numpy())
-        if self._use_direction_classifier:
-            np.save("torch_conv_dir_cls_weight", self.conv_dir_cls.weight.data.detach().cpu().numpy())
-            np.save("torch_conv_dir_cls_bias", self.conv_dir_cls.bias.data.detach().cpu().numpy())
+        if debug:
+            for i in range(len(self.blocks)):
+                np.save("torch_blocks" + str(i)+str(0) + "_weight", self.blocks[i][1].weight.data.detach().cpu().numpy())
+                np.save("torch_blocks" + str(i)+str(1) + "_weight", self.blocks[i][2].weight.data.detach().cpu().numpy())
+                np.save("torch_blocks" + str(i)+str(1) + "_bias", self.blocks[i][2].bias.data.detach().cpu().numpy())
+                for j in range(int((len(self.blocks[i])-4)/3)):
+                    np.save("torch_blocks" + str(i)+str(2 + 2*j+0) + "_weight", self.blocks[i][4 + j*3].weight.data.detach().cpu().numpy())
+                    np.save("torch_blocks" + str(i)+str(2 + 2*j+1) + "_weight", self.blocks[i][4 + j*3+1].weight.data.detach().cpu().numpy())
+                    np.save("torch_blocks" + str(i)+str(2 + 2*j+1) + "_bias", self.blocks[i][4 + j*3+1].bias.data.detach().cpu().numpy())
+            for i in range(len(self.deblocks)):
+                for j in range(int(len(self.deblocks[i])/3)):
+                    np.save("torch_deblocks" + str(i)+str(2*j)+"_weight", self.deblocks[i][j*3].weight.data.detach().cpu().numpy())
+                    np.save("torch_deblocks" + str(i)+str(2*j+1)+"_weight", self.deblocks[i][j*3+1].weight.data.detach().cpu().numpy())
+                    np.save("torch_deblocks" + str(i)+str(2*j+1)+"_bias", self.deblocks[i][j*3+1].bias.data.detach().cpu().numpy())
+            np.save("torch_conv_box_weight", self.conv_box.weight.data.detach().cpu().numpy())
+            np.save("torch_conv_box_bias", self.conv_box.bias.data.detach().cpu().numpy())
+            np.save("torch_conv_cls_weight", self.conv_cls.weight.data.detach().cpu().numpy())
+            np.save("torch_conv_cls_bias", self.conv_cls.bias.data.detach().cpu().numpy())
+            if self._use_direction_classifier:
+                np.save("torch_conv_dir_cls_weight", self.conv_dir_cls.weight.data.detach().cpu().numpy())
+                np.save("torch_conv_dir_cls_bias", self.conv_dir_cls.bias.data.detach().cpu().numpy())
 
     def forward(self, x):
         global flag 
         global input_count 
 
         #for debug
-        base_dir = './rpn/' + str(input_count) + '_'
-        for i in range(len(self.blocks)):
-            np.save(base_dir + "torch_blocks" + str(i)+str(0) + "_weight", self.blocks[i][1].weight.data.detach().cpu().numpy())
-            np.save(base_dir + "torch_blocks" + str(i)+str(1) + "_weight", self.blocks[i][2].weight.data.detach().cpu().numpy())
-            np.save(base_dir + "torch_blocks" + str(i)+str(1) + "_bias", self.blocks[i][2].bias.data.detach().cpu().numpy())
-            for j in range(int((len(self.blocks[i])-4)/3)):
-                np.save(base_dir + "torch_blocks" + str(i)+str(2 + 2*j+0) + "_weight", self.blocks[i][4 + j*3].weight.data.detach().cpu().numpy())
-                np.save(base_dir + "torch_blocks" + str(i)+str(2 + 2*j+1) + "_weight", self.blocks[i][4 + j*3+1].weight.data.detach().cpu().numpy())
-                np.save(base_dir + "torch_blocks" + str(i)+str(2 + 2*j+1) + "_bias", self.blocks[i][4 + j*3+1].bias.data.detach().cpu().numpy())
-        for i in range(len(self.deblocks)):
-            for j in range(int(len(self.deblocks[i])/3)):
-                np.save(base_dir + "torch_deblocks" + str(i)+str(2*j)+"_weight", self.deblocks[i][j*3].weight.data.detach().cpu().numpy())
-                np.save(base_dir + "torch_deblocks" + str(i)+str(2*j+1)+"_weight", self.deblocks[i][j*3+1].weight.data.detach().cpu().numpy())
-                np.save(base_dir + "torch_deblocks" + str(i)+str(2*j+1)+"_bias", self.deblocks[i][j*3+1].bias.data.detach().cpu().numpy())
-        np.save(base_dir + "torch_conv_box_weight", self.conv_box.weight.data.detach().cpu().numpy())
-        np.save(base_dir + "torch_conv_box_bias", self.conv_box.bias.data.detach().cpu().numpy())
-        np.save(base_dir + "torch_conv_cls_weight", self.conv_cls.weight.data.detach().cpu().numpy())
-        np.save(base_dir + "torch_conv_cls_bias", self.conv_cls.bias.data.detach().cpu().numpy())
-        if self._use_direction_classifier:
-            np.save(base_dir + "torch_conv_dir_cls_weight", self.conv_dir_cls.weight.data.detach().cpu().numpy())
-            np.save(base_dir + "torch_conv_dir_cls_bias", self.conv_dir_cls.bias.data.detach().cpu().numpy())
+        if debug:
+            base_dir = './rpn/' + str(input_count) + '_'
+            for i in range(len(self.blocks)):
+                np.save(base_dir + "torch_blocks" + str(i)+str(0) + "_weight", self.blocks[i][1].weight.data.detach().cpu().numpy())
+                np.save(base_dir + "torch_blocks" + str(i)+str(1) + "_weight", self.blocks[i][2].weight.data.detach().cpu().numpy())
+                np.save(base_dir + "torch_blocks" + str(i)+str(1) + "_bias", self.blocks[i][2].bias.data.detach().cpu().numpy())
+                for j in range(int((len(self.blocks[i])-4)/3)):
+                    np.save(base_dir + "torch_blocks" + str(i)+str(2 + 2*j+0) + "_weight", self.blocks[i][4 + j*3].weight.data.detach().cpu().numpy())
+                    np.save(base_dir + "torch_blocks" + str(i)+str(2 + 2*j+1) + "_weight", self.blocks[i][4 + j*3+1].weight.data.detach().cpu().numpy())
+                    np.save(base_dir + "torch_blocks" + str(i)+str(2 + 2*j+1) + "_bias", self.blocks[i][4 + j*3+1].bias.data.detach().cpu().numpy())
+            for i in range(len(self.deblocks)):
+                for j in range(int(len(self.deblocks[i])/3)):
+                    np.save(base_dir + "torch_deblocks" + str(i)+str(2*j)+"_weight", self.deblocks[i][j*3].weight.data.detach().cpu().numpy())
+                    np.save(base_dir + "torch_deblocks" + str(i)+str(2*j+1)+"_weight", self.deblocks[i][j*3+1].weight.data.detach().cpu().numpy())
+                    np.save(base_dir + "torch_deblocks" + str(i)+str(2*j+1)+"_bias", self.deblocks[i][j*3+1].bias.data.detach().cpu().numpy())
+            np.save(base_dir + "torch_conv_box_weight", self.conv_box.weight.data.detach().cpu().numpy())
+            np.save(base_dir + "torch_conv_box_bias", self.conv_box.bias.data.detach().cpu().numpy())
+            np.save(base_dir + "torch_conv_cls_weight", self.conv_cls.weight.data.detach().cpu().numpy())
+            np.save(base_dir + "torch_conv_cls_bias", self.conv_cls.bias.data.detach().cpu().numpy())
+            if self._use_direction_classifier:
+                np.save(base_dir + "torch_conv_dir_cls_weight", self.conv_dir_cls.weight.data.detach().cpu().numpy())
+                np.save(base_dir + "torch_conv_dir_cls_bias", self.conv_dir_cls.bias.data.detach().cpu().numpy())
 
                     
         res = super().forward(x)
 
-        np.save('./rpn/' + str(input_count) + "_out", res['out'].detach().cpu().numpy())
-        input_count += 1
+        if debug:
+            np.save('./rpn/' + str(input_count) + "_out", res['out'].detach().cpu().numpy())
+            input_count += 1
 
         x = res["out"]
         box_preds = self.conv_box(x)

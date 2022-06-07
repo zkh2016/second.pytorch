@@ -48,7 +48,7 @@ class SparseMiddleExtractor(nn.Module):
             Linear = change_default_args(bias=True)(nn.Linear)
         sparse_shape = np.array(output_shape[1:4]) + [1, 0, 0]
         # sparse_shape[0] = 11
-        print(sparse_shape)
+        #print(sparse_shape)
         self.sparse_shape = sparse_shape
         self.scn_input = scn.InputLayer(3, sparse_shape.tolist())
         self.voxel_output_shape = output_shape
@@ -108,6 +108,7 @@ class SparseMiddleExtractor(nn.Module):
         return ret
 
 flag = 1
+debug=0
 
 @register_middle
 class SpMiddleFHD(nn.Module):
@@ -140,12 +141,12 @@ class SpMiddleFHD(nn.Module):
                 nn.ConvTranspose2d)
         sparse_shape = np.array(output_shape[1:4]) + [1, 0, 0]
         # sparse_shape[0] = 11
-        print("sparse_shape = ", sparse_shape)
-        print("output_shape = ", output_shape)
+        #print("sparse_shape = ", sparse_shape)
+        #print("output_shape = ", output_shape)
         self.sparse_shape = sparse_shape
         self.voxel_output_shape = output_shape
         # input: # [1600, 1200, 41]
-        print("num_input_features=", num_input_features)
+        #print("num_input_features=", num_input_features)
         self.middle_conv = spconv.SparseSequential(
             SubMConv3d(num_input_features, 16, 3, indice_key="subm0"),
             #BatchNorm1d(16),
@@ -209,8 +210,9 @@ class SpMiddleFHD(nn.Module):
         # self.grid = torch.full([self.max_batch_size, *sparse_shape], -1, dtype=torch.int32).cuda()
         
         #for debug
-        for i in range(int(len(self.middle_conv)/2)):
-            np.save("torch_middle_weight" + str(i), self.middle_conv[i*2].weight.data.detach().cpu().numpy())
+        if debug:
+            for i in range(int(len(self.middle_conv)/2)):
+                np.save("torch_middle_weight" + str(i), self.middle_conv[i*2].weight.data.detach().cpu().numpy())
 
     def forward(self, voxel_features, coors, batch_size):
         # coors[:, 1] += 1
@@ -234,7 +236,7 @@ class SpMiddleFHD(nn.Module):
         ret = ret.dense()
 
         N, C, D, H, W = ret.shape
-        print("out shape: ", N, C, D, H, W)
+        #print("out shape: ", N, C, D, H, W)
         ret = ret.view(N, C * D, H, W)
         return ret
 
@@ -269,7 +271,7 @@ class SpMiddleFHDPeople(nn.Module):
                 nn.ConvTranspose2d)
         sparse_shape = np.array(output_shape[1:4]) + [1, 0, 0]
         # sparse_shape[0] = 11
-        print(sparse_shape)
+        #print(sparse_shape)
         self.sparse_shape = sparse_shape
         self.voxel_output_shape = output_shape
         # input: # [1600, 1200, 41]
@@ -358,7 +360,7 @@ class SpMiddle2K(nn.Module):
                 nn.ConvTranspose2d)
         sparse_shape = np.array(output_shape[1:4]) + [1, 0, 0]
         # sparse_shape[0] = 11
-        print(sparse_shape)
+        #print(sparse_shape)
         self.sparse_shape = sparse_shape
         self.voxel_output_shape = output_shape
         # input: # [1600, 1200, 41]
@@ -474,7 +476,7 @@ class SpMiddleFHDLite(nn.Module):
                 nn.ConvTranspose2d)
         sparse_shape = np.array(output_shape[1:4]) + [1, 0, 0]
         # sparse_shape[0] = 11
-        print(sparse_shape)
+        #print(sparse_shape)
         self.sparse_shape = sparse_shape
         self.voxel_output_shape = output_shape
         # input: # [1600, 1200, 41]
@@ -542,7 +544,7 @@ class SpMiddleFHDLiteHRZ(nn.Module):
                 nn.ConvTranspose2d)
         sparse_shape = np.array(output_shape[1:4]) + [1, 0, 0]
         # sparse_shape[0] = 11
-        print(sparse_shape)
+        #print(sparse_shape)
         self.sparse_shape = sparse_shape
         self.voxel_output_shape = output_shape
         # input: # [1600, 1200, 41]
@@ -602,7 +604,7 @@ class SpMiddleFHDHRZ(nn.Module):
             SubMConv3d = change_default_args(bias=True)(spconv.SubMConv3d)
         sparse_shape = np.array(output_shape[1:4]) + [1, 0, 0]
         # sparse_shape[0] = 11
-        print(sparse_shape)
+        #print(sparse_shape)
         self.sparse_shape = sparse_shape
         self.voxel_output_shape = output_shape
         # input: # [1600, 1200, 41]

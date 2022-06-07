@@ -24,7 +24,8 @@ from second.utils.log_tool import SimpleModelLog
 from second.utils.progress_bar import ProgressBar
 import psutil
 
-flag = 0
+flag = 1
+debug = 0
 
 def example_convert_to_torch(example, dtype=torch.float32,
                              device=None) -> dict:
@@ -184,7 +185,7 @@ def train(config_path,
     #     net.convert_norm_to_float(net)
     target_assigner = net.target_assigner
     voxel_generator = net.voxel_generator
-    print("num parameters:", len(list(net.parameters())))
+    #print("num parameters:", len(list(net.parameters())))
     #torchplus.train.try_restore_latest_checkpoints(model_dir, [net])
     if pretrained_path is not None:
         model_dict = net.state_dict()
@@ -300,20 +301,18 @@ def train(config_path,
                 net.clear_metrics()
             input_count = 0
             for example in dataloader:
-                #if flag == 0:
-                    #print(example.keys())
-                    #dict_keys(['voxels', 'num_points', 'coordinates', 'num_voxels', 'metrics', 'anchors', 'gt_names', 'labels', 'reg_targets','importance', 'metadata'])
-                base_dir = './inputs/' + str(input_count) + '_'
-                np.save(base_dir + 'torch_labels', example['labels'])
-                np.save(base_dir + 'torch_importance', example['importance'])
-                np.save(base_dir + 'torch_voxels', example['voxels'])
-                np.save(base_dir + 'torch_numpoints', example['num_points'])
-                np.save(base_dir + 'torch_coordinates', example['coordinates'])
-                np.save(base_dir + 'torch_numvoxels', example['num_voxels'])
-                np.save(base_dir + 'torch_metrics', example['metrics'])
-                np.save(base_dir + 'torch_anchors', example['anchors'])
-                np.save(base_dir + 'torch_gt_names', example['gt_names'])
-                np.save(base_dir + 'torch_reg_targets', example['reg_targets'])
+                if debug:
+                    base_dir = './inputs/' + str(input_count) + '_'
+                    np.save(base_dir + 'torch_labels', example['labels'])
+                    np.save(base_dir + 'torch_importance', example['importance'])
+                    np.save(base_dir + 'torch_voxels', example['voxels'])
+                    np.save(base_dir + 'torch_numpoints', example['num_points'])
+                    np.save(base_dir + 'torch_coordinates', example['coordinates'])
+                    np.save(base_dir + 'torch_numvoxels', example['num_voxels'])
+                    np.save(base_dir + 'torch_metrics', example['metrics'])
+                    np.save(base_dir + 'torch_anchors', example['anchors'])
+                    np.save(base_dir + 'torch_gt_names', example['gt_names'])
+                    np.save(base_dir + 'torch_reg_targets', example['reg_targets'])
 
                 lr_scheduler.step(net.get_global_step())
                 time_metrics = example["metrics"]
@@ -339,18 +338,19 @@ def train(config_path,
                 cared = ret_dict["cared"]
                 labels = example_torch["labels"]
 
-                loss_dir = './loss_dir/' + str(input_count) + '_'
-                np.save(loss_dir + 'torch_cls_preds', cls_preds.detach().cpu().numpy())
-                np.save(loss_dir + 'torch_loss', loss.detach().cpu().numpy())
-                np.save(loss_dir + 'torch_cls_loss_reduced', cls_loss_reduced.detach().cpu().numpy())
-                np.save(loss_dir + 'torch_loc_loss_reduced', loc_loss_reduced.detach().cpu().numpy())
-                np.save(loss_dir + 'torch_cls_pos_loss', cls_pos_loss.detach().cpu().numpy())
-                np.save(loss_dir + 'torch_cls_neg_loss', cls_neg_loss.detach().cpu().numpy())
-                np.save(loss_dir + 'torch_loc_loss', loc_loss.detach().cpu().numpy())
-                np.save(loss_dir + 'torch_cls_loss', cls_loss.detach().cpu().numpy())
-                input_count += 1
+                if debug:
+                    loss_dir = './loss_dir/' + str(input_count) + '_'
+                    np.save(loss_dir + 'torch_cls_preds', cls_preds.detach().cpu().numpy())
+                    np.save(loss_dir + 'torch_loss', loss.detach().cpu().numpy())
+                    np.save(loss_dir + 'torch_cls_loss_reduced', cls_loss_reduced.detach().cpu().numpy())
+                    np.save(loss_dir + 'torch_loc_loss_reduced', loc_loss_reduced.detach().cpu().numpy())
+                    np.save(loss_dir + 'torch_cls_pos_loss', cls_pos_loss.detach().cpu().numpy())
+                    np.save(loss_dir + 'torch_cls_neg_loss', cls_neg_loss.detach().cpu().numpy())
+                    np.save(loss_dir + 'torch_loc_loss', loc_loss.detach().cpu().numpy())
+                    np.save(loss_dir + 'torch_cls_loss', cls_loss.detach().cpu().numpy())
+                    input_count += 1
 
-                print("compare weight success before backward")
+                    print("compare weight success before backward")
 
                 torch.cuda.synchronize()
                 t1 = time.time()
@@ -368,9 +368,9 @@ def train(config_path,
                     print('weight name = ', net.rpn.blocks[0][1].weight.name)
                     np.save('torch_middle_weight', net.middle_feature_extractor.middle_conv[0].weight.grad.cpu().numpy())
 
-                #torch.nn.utils.clip_grad_norm_(net.parameters(), 10.0)
-                #amp_optimizer.step()
-                #amp_optimizer.zero_grad()
+                torch.nn.utils.clip_grad_norm_(net.parameters(), 10.0)
+                amp_optimizer.step()
+                amp_optimizer.zero_grad()
                 net.update_global_step()
                 if flag == 0:
                     flag = 1

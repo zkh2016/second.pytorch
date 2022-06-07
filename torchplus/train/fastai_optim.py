@@ -12,6 +12,7 @@ from torch.nn.utils import parameters_to_vector
 bn_types = (nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d)
 
 param_count = 0
+debug = 0
 
 
 def split_bn_bias(layer_groups):
@@ -107,7 +108,7 @@ def trainable_params(m: nn.Module):
     for p in m.parameters():
         if p.requires_grad:
             len += 1
-    print("the len of params need grad: ", len)
+    #print("the len of params need grad: ", len)
     return res
 
 
@@ -126,9 +127,9 @@ class OptimWrapper(torch.optim.Optimizer):
         self.opt_keys.remove('params')
         self.read_defaults()
         self.wd = wd
-        print("opt=", self.opt)
-        print("opt_keys=", self.opt_keys)
-        print("wd=", self.wd, "true_wd=", self.true_wd, "bn_wd=", self.bn_wd)
+        #print("opt=", self.opt)
+        #print("opt_keys=", self.opt_keys)
+        #print("wd=", self.wd, "true_wd=", self.true_wd, "bn_wd=", self.bn_wd)
 
     @classmethod
     def create(cls, opt_func, lr, layer_groups, **kwargs):
@@ -140,7 +141,7 @@ class OptimWrapper(torch.optim.Optimizer):
         } for l in split_groups])
         opt = cls(opt, **kwargs)
         opt.lr, opt.opt_func = listify(lr, layer_groups), opt_func
-        print("opt.lr=", opt.lr, "opt.opt_func=", opt.opt_func)
+        #print("opt.lr=", opt.lr, "opt.opt_func=", opt.opt_func)
         return opt
 
     def new(self, layer_groups):
@@ -171,29 +172,42 @@ class OptimWrapper(torch.optim.Optimizer):
             for lr, wd, pg1, pg2 in zip(self._lr, self._wd,
                                         self.opt.param_groups[::2],
                                         self.opt.param_groups[1::2]):
-                print("opt step: wd = ", wd, " lr = ", lr, self._wd)
+                #print("opt step: wd = ", wd, " lr = ", lr, self._wd)
                 for p in pg1['params']:
-                    np.save('./weights/before_opt_' + str(param_count), p.data.cpu().numpy())
-                    p.data.mul_(1 - wd * lr)
-                    np.save('./weights/after_opt_' + str(param_count), p.data.cpu().numpy())
-                    param_count += 1
-                if self.bn_wd:
-                    for p in pg2['params']:
+                    if debug:
                         np.save('./weights/before_opt_' + str(param_count), p.data.cpu().numpy())
-                        p.data.mul_(1 - wd * lr)
+                        np.save('./weights/grad_before_opt_' + str(param_count), p.grad.cpu().numpy())
+                    p.data.mul_(1 - wd * lr)
+
+                    if debug:
                         np.save('./weights/after_opt_' + str(param_count), p.data.cpu().numpy())
                         param_count += 1
+
+                if self.bn_wd:
+                    for p in pg2['params']:
+                        if debug:
+                            np.save('./weights/before_opt_' + str(param_count), p.data.cpu().numpy())
+
+                        p.data.mul_(1 - wd * lr)
+
+                        if debug:
+                            np.save('./weights/after_opt_' + str(param_count), p.data.cpu().numpy())
+                            param_count += 1
+
             self.set_val('weight_decay', listify(0, self._wd))
+
         self.opt.step()
 
         for pg1, pg2 in zip(self.opt.param_groups[::2], self.opt.param_groups[1::2]):
             for p in pg1['params']:
-                np.save('./weights/after_opt2_' + str(param_count), p.data.cpu().numpy())
-                param_count += 1
-            if self.bn_wd:
-                for p in pg2['params']:
+                if debug:
                     np.save('./weights/after_opt2_' + str(param_count), p.data.cpu().numpy())
                     param_count += 1
+            if self.bn_wd:
+                for p in pg2['params']:
+                    if debug:
+                        np.save('./weights/after_opt2_' + str(param_count), p.data.cpu().numpy())
+                        param_count += 1
 
     def zero_grad(self) -> None:
         "Clear optimizer gradients."
@@ -201,28 +215,35 @@ class OptimWrapper(torch.optim.Optimizer):
 
     #Passthrough to the inner opt.
     def __getstate__(self):
+        #print("call getstate.....")
         return self.opt.__getstate__()
 
     def __setstate__(self, state):
+        #print("call setstate.....")
         return self.opt.__setstate__(state)
 
     def state_dict(self):
+        #print("call state_dict.....")
         return self.opt.state_dict()
 
     def load_state_dict(self, state_dict):
+        #print("call load_state_dict.....")
         return self.opt.load_state_dict(state_dict)
 
     def add_param_group(self, param_group):
+        #print("call add_param_group.....")
         return self.opt.add_param_group(param_group)
 
     def clear(self):
         "Reset the state of the inner optimizer."
+        #print("calll clear.....")
         sd = self.state_dict()
         sd['state'] = {}
         self.load_state_dict(sd)
 
     @property
     def param_groups(self):
+        #print("calll param_graoups....")
         return self.opt.param_groups
 
     @property
@@ -231,26 +252,30 @@ class OptimWrapper(torch.optim.Optimizer):
 
     @property
     def state(self):
+        #print("call state.....")
         return self.opt.state
 
 
     #Hyperparameters as properties
     @property
     def lr(self) -> float:
+        #print("call get lr...")
         return self._lr[-1]
 
     @lr.setter
     def lr(self, val: float) -> None:
-        print("call set_lr..", val)
+        #print("call set_lr..", val)
         self._lr = self.set_val('lr', listify(val, self._lr))
 
     @property
     def mom(self) -> float:
+        #print("call get mom...")
         return self._mom[-1]
 
     @mom.setter
     def mom(self, val: float) -> None:
         if 'momentum' in self.opt_keys:
+            #print("set momentum....")
             self.set_val('momentum', listify(val, self._mom))
         elif 'betas' in self.opt_keys:
             self.set_val('betas', (listify(val, self._mom), self._beta))
@@ -258,25 +283,31 @@ class OptimWrapper(torch.optim.Optimizer):
 
     @property
     def beta(self) -> float:
+        #print("get beta....")
         return None if self._beta is None else self._beta[-1]
 
     @beta.setter
     def beta(self, val: float) -> None:
         "Set beta (or alpha as makes sense for given optimizer)."
+        #print("set beta....")
         if val is None: return
         if 'betas' in self.opt_keys:
+            #print("set beta in betas..")
             self.set_val('betas', (self._mom, listify(val, self._beta)))
         elif 'alpha' in self.opt_keys:
+            #print("set alpha....")
             self.set_val('alpha', listify(val, self._beta))
         self._beta = listify(val, self._beta)
 
     @property
     def wd(self) -> float:
+        #print("get wd....")
         return self._wd[-1]
 
     @wd.setter
     def wd(self, val: float) -> None:
         "Set weight decay."
+        #print("set wd.....")
         if not self.true_wd:
             self.set_val(
                 'weight_decay', listify(val, self._wd), bn_groups=self.bn_wd)
@@ -293,8 +324,8 @@ class OptimWrapper(torch.optim.Optimizer):
             self._mom, self._beta = self.read_val('betas')
         if 'weight_decay' in self.opt_keys:
             self._wd = self.read_val('weight_decay')
-        print("read_defaults:")
-        print("lr=", self._lr, "mom=", self._mom, "beta=", self._beta, "wd=", self._wd)
+        #print("read_defaults:")
+        #print("lr=", self._lr, "mom=", self._mom, "beta=", self._beta, "wd=", self._wd)
 
     def set_val(self, key: str, val, bn_groups: bool = True):
         "Set `val` inside the optimizer dictionary at `key`."
