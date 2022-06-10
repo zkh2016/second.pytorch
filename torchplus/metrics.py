@@ -62,7 +62,7 @@ class Accuracy(nn.Module):
         total = torch.sum((pred_labels == labels.long()).float())
         self.count += num_examples
         self.total += total
-        print("total = ", self.total, " count=", self.count)
+        #print("total = ", self.total, " count=", self.count)
         return self.value.cpu()
         # return (total /  num_examples.data).cpu()
     @property

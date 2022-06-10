@@ -20,6 +20,7 @@ from second.pytorch.utils import torch_timer
 loss_flag = 1
 input_count = 0
 debug=0
+profiling=False
 
 def _get_pos_neg_loss(cls_loss, labels):
     # cls_loss: [N, num_anchors, num_class]
@@ -358,13 +359,14 @@ class VoxelNet(nn.Module):
         if debug:
             np.save('./voxel/' + str(input_count) + '_voxels', voxels.detach().cpu().numpy())
 
-        t0 = time.time() 
+        if profiling:
+            t0 = time.time() 
         voxel_features = self.voxel_feature_extractor(voxels, num_points,
                                                       coors)
-        torch.cuda.synchronize()
-        t1 = time.time()
-        print("voxel_features.stop_gradient=", voxel_features.requires_grad)
-        print("vfe time: ", t1-t0)
+        if profiling:
+            torch.cuda.synchronize()
+            t1 = time.time()
+            print("vfe time: ", t1-t0)
 
         if flag == 0:
             np.save('torch_vfe_out_voxels', voxel_features.detach().cpu().numpy())
@@ -373,25 +375,33 @@ class VoxelNet(nn.Module):
         self.end_timer("voxel_feature_extractor")
 
         self.start_timer("middle forward")
-        t0 = time.time() 
+
+        if profiling:
+            t0 = time.time() 
         spatial_features = self.middle_feature_extractor(
             voxel_features, coors, batch_size)
-        torch.cuda.synchronize()
+
+        if profiling:
+            torch.cuda.synchronize()
+            t1 = time.time()
+            print("middle time: ", t1-t0)
+
         if debug:
             np.save('./middle/' + str(input_count) + '_spatial_features', spatial_features.detach().cpu().numpy())
-        t1 = time.time()
-        print("middle time: ", t1-t0)
 
         if flag == 0:
             np.save('torch_spatial_features', spatial_features.detach().cpu().numpy())
 
         self.end_timer("middle forward")
         self.start_timer("rpn forward")
-        t0 = time.time() 
+
+        if profiling:
+            t0 = time.time() 
         preds_dict = self.rpn(spatial_features)
-        torch.cuda.synchronize()
-        t1 = time.time()
-        print("rpn time: ", t1-t0)
+        if profiling:
+            torch.cuda.synchronize()
+            t1 = time.time()
+            print("rpn time: ", t1-t0)
 
         if debug:
             np.save('./rpn/' + str(input_count) + '_box_preds', preds_dict['box_preds'].detach().cpu().numpy())

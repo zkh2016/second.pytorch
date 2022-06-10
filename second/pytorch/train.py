@@ -26,6 +26,7 @@ import psutil
 
 flag = 1
 debug = 0
+profiling=False
 
 def example_convert_to_torch(example, dtype=torch.float32,
                              device=None) -> dict:
@@ -134,7 +135,7 @@ def train(config_path,
           model_dir,
           result_path=None,
           create_folder=False,
-          display_step=1,
+          display_step=10,
           summary_step=5,
           pretrained_path=None,
           pretrained_include=None,
@@ -266,7 +267,7 @@ def train(config_path,
         dataset,
         batch_size=input_cfg.batch_size * num_gpu,
         shuffle=True,
-        num_workers=1,#input_cfg.preprocess.num_workers * num_gpu,
+        num_workers=input_cfg.preprocess.num_workers * num_gpu,
         pin_memory=False,
         collate_fn=collate_fn,
         #worker_init_fn=_worker_init_fn,
@@ -321,8 +322,10 @@ def train(config_path,
 
                 batch_size = example["anchors"].shape[0]
 
-                torch.cuda.synchronize()
-                t0 = time.time()
+    
+                if profiling:
+                    torch.cuda.synchronize()
+                    t0 = time.time()
 
                 ret_dict = net_parallel(example_torch)
 
@@ -352,16 +355,20 @@ def train(config_path,
 
                     print("compare weight success before backward")
 
-                torch.cuda.synchronize()
-                t1 = time.time()
+                if profiling:
+                    torch.cuda.synchronize()
+                    t1 = time.time()
+
                 if train_cfg.enable_mixed_precision:
                     with amp.scale_loss(loss, amp_optimizer) as scaled_loss:
                         scaled_loss.backward()
                 else:
                     loss.backward()
-                torch.cuda.synchronize()
-                t2 = time.time()
-                print("forward time = ", t1-t0, "backward time = ", t2-t1)
+
+                if profiling:
+                    torch.cuda.synchronize()
+                    t2 = time.time()
+                    print("forward time = ", t1-t0, "backward time = ", t2-t1)
                 if flag == 0:
                     np.save('torch_conv_box_weight_grad', net.rpn.conv_box.weight.grad.cpu().numpy())
                     np.save('torch_blocks_weight_grad', net.rpn.blocks[0][1].weight.grad.cpu().numpy())
