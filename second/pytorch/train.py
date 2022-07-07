@@ -74,7 +74,7 @@ def build_network(model_cfg, measure_time=False):
 def _worker_init_fn(worker_id):
     time_seed = np.array(time.time(), dtype=np.int32)
     np.random.seed(time_seed + worker_id)
-    print(f"WORKER {worker_id} seed:", np.random.get_state()[1][0])
+    #print(f"WORKER {worker_id} seed:", np.random.get_state()[1][0])
 
 def freeze_params(params: dict, include: str=None, exclude: str=None):
     assert isinstance(params, dict)
@@ -137,7 +137,7 @@ def train(config_path,
           model_dir,
           result_path=None,
           create_folder=False,
-          display_step=50,
+          display_step=10,
           summary_step=5,
           pretrained_path=None,
           pretrained_include=None,
@@ -272,7 +272,7 @@ def train(config_path,
         num_workers=input_cfg.preprocess.num_workers * num_gpu,
         pin_memory=False,
         collate_fn=collate_fn,
-        #worker_init_fn=_worker_init_fn,
+        worker_init_fn=_worker_init_fn,
         drop_last=not multi_gpu)
     eval_dataloader = torch.utils.data.DataLoader(
         eval_dataset,
@@ -297,8 +297,8 @@ def train(config_path,
     amp_optimizer.zero_grad()
     step_times = []
     step = start_step
-    global flag
     total_time = 0
+    profiling_step = 0
     try:
         while True:
             if clear_metrics_every_epoch:
@@ -336,14 +336,17 @@ def train(config_path,
                 amp_optimizer.step()
                 amp_optimizer.zero_grad()
                 net.update_global_step()
+                local_step += 1
 
                 net_metrics = net.update_metrics(cls_loss_reduced,
                                                  loc_loss_reduced, cls_preds,
                                                  labels, cared)
 
                 step_time = (time.time() - t)
-                if local_step > 1:
+                if local_step >= 10:
                     total_time += step_time
+                    profiling_step += 1
+
                 step_times.append(step_time)
                 t = time.time()
                 metrics = {}
@@ -354,7 +357,6 @@ def train(config_path,
                 else:
                     num_anchors = int(example_torch['anchors_mask'][0].sum())
                 global_step = net.get_global_step()
-                local_step += 1
 
                 if global_step % display_step == 0:
                     if measure_time:
@@ -369,7 +371,7 @@ def train(config_path,
                         "torch_step": global_step,
                         "local_step" : local_step, 
                         "steptime": np.mean(step_times),
-                        "avgtime": total_time/global_step,
+                        "avgtime": total_time/profiling_step,
                     }
                     metrics["runtime"].update(time_metrics[0])
                     step_times = []
