@@ -130,12 +130,14 @@ def filter_param_dict(state_dict: dict, include: str=None, exclude: str=None):
         res_dict[k] = p
     return res_dict
 
+import warnings
+warnings.filterwarnings('ignore')
 
 def train(config_path,
           model_dir,
           result_path=None,
           create_folder=False,
-          display_step=10,
+          display_step=50,
           summary_step=5,
           pretrained_path=None,
           pretrained_include=None,
@@ -296,36 +298,19 @@ def train(config_path,
     step_times = []
     step = start_step
     global flag
+    total_time = 0
     try:
         while True:
             if clear_metrics_every_epoch:
                 net.clear_metrics()
-            input_count = 0
+            local_step = 0
             for example in dataloader:
-                if debug:
-                    base_dir = './inputs/' + str(input_count) + '_'
-                    np.save(base_dir + 'torch_labels', example['labels'])
-                    np.save(base_dir + 'torch_importance', example['importance'])
-                    np.save(base_dir + 'torch_voxels', example['voxels'])
-                    np.save(base_dir + 'torch_numpoints', example['num_points'])
-                    np.save(base_dir + 'torch_coordinates', example['coordinates'])
-                    np.save(base_dir + 'torch_numvoxels', example['num_voxels'])
-                    np.save(base_dir + 'torch_metrics', example['metrics'])
-                    np.save(base_dir + 'torch_anchors', example['anchors'])
-                    np.save(base_dir + 'torch_gt_names', example['gt_names'])
-                    np.save(base_dir + 'torch_reg_targets', example['reg_targets'])
-
                 lr_scheduler.step(net.get_global_step())
                 time_metrics = example["metrics"]
                 example.pop("metrics")
                 example_torch = example_convert_to_torch(example, float_dtype)
 
                 batch_size = example["anchors"].shape[0]
-
-    
-                if profiling:
-                    torch.cuda.synchronize()
-                    t0 = time.time()
 
                 ret_dict = net_parallel(example_torch)
 
@@ -341,55 +326,24 @@ def train(config_path,
                 cared = ret_dict["cared"]
                 labels = example_torch["labels"]
 
-                if debug:
-                    loss_dir = './loss_dir/' + str(input_count) + '_'
-                    np.save(loss_dir + 'torch_cls_preds', cls_preds.detach().cpu().numpy())
-                    np.save(loss_dir + 'torch_loss', loss.detach().cpu().numpy())
-                    np.save(loss_dir + 'torch_cls_loss_reduced', cls_loss_reduced.detach().cpu().numpy())
-                    np.save(loss_dir + 'torch_loc_loss_reduced', loc_loss_reduced.detach().cpu().numpy())
-                    np.save(loss_dir + 'torch_cls_pos_loss', cls_pos_loss.detach().cpu().numpy())
-                    np.save(loss_dir + 'torch_cls_neg_loss', cls_neg_loss.detach().cpu().numpy())
-                    np.save(loss_dir + 'torch_loc_loss', loc_loss.detach().cpu().numpy())
-                    np.save(loss_dir + 'torch_cls_loss', cls_loss.detach().cpu().numpy())
-                    input_count += 1
-
-                    print("compare weight success before backward")
-
-                if profiling:
-                    torch.cuda.synchronize()
-                    t1 = time.time()
-
                 if train_cfg.enable_mixed_precision:
                     with amp.scale_loss(loss, amp_optimizer) as scaled_loss:
                         scaled_loss.backward()
                 else:
                     loss.backward()
 
-                if profiling:
-                    torch.cuda.synchronize()
-                    t2 = time.time()
-                    print("forward time = ", t1-t0, "backward time = ", t2-t1)
-                if flag == 0:
-                    np.save('torch_conv_box_weight_grad', net.rpn.conv_box.weight.grad.cpu().numpy())
-                    np.save('torch_blocks_weight_grad', net.rpn.blocks[0][1].weight.grad.cpu().numpy())
-                    print('weight name = ', net.rpn.blocks[0][1].weight.name)
-                    np.save('torch_middle_weight', net.middle_feature_extractor.middle_conv[0].weight.grad.cpu().numpy())
-
                 torch.nn.utils.clip_grad_norm_(net.parameters(), 10.0)
                 amp_optimizer.step()
                 amp_optimizer.zero_grad()
                 net.update_global_step()
-                if flag == 0:
-                    flag = 1
-                    np.save('torch_conv_box_weight_opt', net.rpn.conv_box.weight.detach().cpu().numpy())
-                    np.save('torch_blocks_weight_opt', net.rpn.blocks[0][1].weight.detach().cpu().numpy())
-                    np.save('torch_middle_weight_opt', net.middle_feature_extractor.middle_conv[0].weight.detach().cpu().numpy())
 
                 net_metrics = net.update_metrics(cls_loss_reduced,
                                                  loc_loss_reduced, cls_preds,
                                                  labels, cared)
 
                 step_time = (time.time() - t)
+                if local_step > 1:
+                    total_time += step_time
                 step_times.append(step_time)
                 t = time.time()
                 metrics = {}
@@ -400,6 +354,7 @@ def train(config_path,
                 else:
                     num_anchors = int(example_torch['anchors_mask'][0].sum())
                 global_step = net.get_global_step()
+                local_step += 1
 
                 if global_step % display_step == 0:
                     if measure_time:
@@ -411,8 +366,10 @@ def train(config_path,
                               batch_size) for i in range(loc_loss.shape[-1])
                     ]
                     metrics["runtime"] = {
-                        "step": global_step,
+                        "torch_step": global_step,
+                        "local_step" : local_step, 
                         "steptime": np.mean(step_times),
+                        "avgtime": total_time/global_step,
                     }
                     metrics["runtime"].update(time_metrics[0])
                     step_times = []
